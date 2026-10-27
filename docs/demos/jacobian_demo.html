@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Jacobian Visualization</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #f0f0f0; }
+        canvas { background: white; border: 1px solid #ccc; margin-top: 20px; cursor: crosshair; }
+        .controls { margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+    <h2>机器人雅可比矩阵直观演示</h2>
+    <p>想象这是你的手指（两节）。<br>
+       <b>鼠标移动：</b> 设定你想让指尖（或传感器）移动的目标位置 (Target)。<br>
+       <b>观察：</b> 为了去那个红点，两个关节（电机）分别需要转多少度？</p>
+    
+    <canvas id="simCanvas" width="600" height="400"></canvas>
+    
+    <div class="controls">
+        <div id="info">移动鼠标来模拟受力...</div>
+    </div>
+
+<script>
+    const canvas = document.getElementById('simCanvas');
+    const ctx = canvas.getContext('2d');
+    const info = document.getElementById('info');
+
+    // 机器人参数
+    const origin = { x: 300, y: 350 };
+    let q1 = -Math.PI / 4; // 关节1角度
+    let q2 = Math.PI / 2;  // 关节2角度
+    const L1 = 120; // 近节长度
+    const L2 = 100; // 远节长度
+
+    let target = { x: 300, y: 200 };
+
+    function forwardKinematics(th1, th2) {
+        const x1 = origin.x + L1 * Math.cos(th1);
+        const y1 = origin.y + L1 * Math.sin(th1);
+        const x2 = x1 + L2 * Math.cos(th1 + th2);
+        const y2 = y1 + L2 * Math.sin(th1 + th2);
+        return { x1, y1, x2, y2 };
+    }
+
+    function calculateJacobian(th1, th2) {
+        // 2D 平面雅可比矩阵公式
+        // J = [ dx/dq1  dx/dq2 ]
+        //     [ dy/dq1  dy/dq2 ]
+        
+        const s1 = Math.sin(th1);
+        const c1 = Math.cos(th1);
+        const s12 = Math.sin(th1 + th2);
+        const c12 = Math.cos(th1 + th2);
+
+        // 这是一个偏导数矩阵：
+        // 如果 q1 动一点点，x 变化多少？ -> -L1*s1 - L2*s12
+        // 如果 q2 动一点点，x 变化多少？ -> -L2*s12
+        const J11 = -L1 * s1 - L2 * s12;
+        const J12 = -L2 * s12;
+        const J21 =  L1 * c1 + L2 * c12;
+        const J22 =  L2 * c12;
+
+        return [[J11, J12], [J21, J22]];
+    }
+
+    // 简单的 2x2 矩阵求逆
+    function invertMatrix(J) {
+        const det = J[0][0] * J[1][1] - J[0][1] * J[1][0];
+        if (Math.abs(det) < 1e-5) return null; // 奇异姿态 (Singularity)
+        return [
+            [ J[1][1] / det, -J[0][1] / det],
+            [-J[1][0] / det,  J[0][0] / det]
+        ];
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 1. 绘制当前状态
+        const pos = forwardKinematics(q1, q2);
+
+        // 绘制 Link 1
+        ctx.lineWidth = 8;
+        ctx.strokeStyle = '#333';
+        ctx.beginPath();
+        ctx.moveTo(origin.x, origin.y);
+        ctx.lineTo(pos.x1, pos.y1);
+        ctx.stroke();
+
+        // 绘制 Link 2
+        ctx.beginPath();
+        ctx.moveTo(pos.x1, pos.y1);
+        ctx.lineTo(pos.x2, pos.y2);
+        ctx.stroke();
+
+        // 绘制关节
+        ctx.fillStyle = '#FFD700';
+        ctx.beginPath(); ctx.arc(origin.x, origin.y, 10, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(pos.x1, pos.y1, 8, 0, Math.PI*2); ctx.fill();
+
+        // 绘制指尖 (End Effector)
+        ctx.fillStyle = '#00CC00';
+        ctx.beginPath(); ctx.arc(pos.x2, pos.y2, 8, 0, Math.PI*2); ctx.fill();
+
+        // 2. 模拟控制：向目标移动一小步 (Inverse Kinematics)
+        // 计算误差向量 (dx)
+        const dx = (target.x - pos.x2) * 0.1; // 比例增益
+        const dy = (target.y - pos.y2) * 0.1;
+
+        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+            // 计算雅可比
+            const J = calculateJacobian(q1, q2);
+            // 计算雅可比的逆
+            const J_inv = invertMatrix(J);
+
+            if (J_inv) {
+                // 核心公式： dq = J_inv * dx
+                const dq1 = J_inv[0][0] * dx + J_inv[0][1] * dy;
+                const dq2 = J_inv[1][0] * dx + J_inv[1][1] * dy;
+
+                // 更新关节
+                q1 += dq1;
+                q2 += dq2;
+                
+                info.innerHTML = `
+                    <b>导纳控制中...</b><br>
+                    想要位移 (dx, dy): [${dx.toFixed(2)}, ${dy.toFixed(2)}]<br>
+                    <b>雅可比计算出关节速度 (dq):</b><br>
+                    关节1需转: ${(dq1*57.3).toFixed(2)}° <br>
+                    关节2需转: ${(dq2*57.3).toFixed(2)}°
+                `;
+            } else {
+                info.innerHTML = "奇异姿态！无法计算（比如手臂完全伸直了）";
+            }
+        }
+
+        // 绘制目标点
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
+        ctx.beginPath(); ctx.arc(target.x, target.y, 10, 0, Math.PI*2); ctx.fill();
+        
+        requestAnimationFrame(draw);
+    }
+
+    canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        target.x = e.clientX - rect.left;
+        target.y = e.clientY - rect.top;
+    });
+
+    draw();
+</script>
+</body>
+</html>

@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Aero Hand Pro Viz</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #1e1e1e; font-family: 'Segoe UI', sans-serif; }
+        #info { 
+            position: absolute; top: 20px; left: 20px; 
+            background: rgba(30, 30, 30, 0.9); 
+            padding: 20px; border-radius: 10px; 
+            color: #eee; border: 1px solid #444;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            pointer-events: none;
+            min-width: 220px;
+        }
+        h3 { margin: 0 0 10px 0; font-size: 16px; color: #fff; border-bottom: 1px solid #555; padding-bottom: 5px;}
+        p { margin: 5px 0; font-size: 13px; color: #aaa; }
+        .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #555; margin-right: 5px; }
+        .connected { background: #00ff88; box-shadow: 0 0 10px #00ff88; }
+        .disconnected { background: #ff4444; }
+        
+        .legend { margin-top: 15px; height: 8px; background: linear-gradient(to right, #00ffff, #00ff00, #ffff00, #ff0000); border-radius: 4px; }
+        .legend-labels { display: flex; justify-content: space-between; font-size: 10px; color: #bbb; margin-top: 4px;}
+        .key-item { display: flex; align-items: center; margin-top: 5px; font-size: 11px; color: #999; }
+        .key-color { width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; display: inline-block; }
+    </style>
+    <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
+</head>
+<body>
+    <div id="info">
+        <h3>Aero Hand Tactile Viz</h3>
+        <p><span id="statusDot" class="status-dot"></span> <span id="statusText">Connecting...</span></p>
+        <div class="key-item"><span class="key-color" style="background:#00ffff"></span> < 0.5N (Touch)</div>
+        <div class="key-item"><span class="key-color" style="background:#00ff00"></span> ~ 1.0N (Hold)</div>
+        <div class="key-item"><span class="key-color" style="background:#ff0000"></span> > 2.0N (Force)</div>
+        <div class="legend"></div>
+        <div class="legend-labels">
+            <span>0N</span>
+            <span>1N</span>
+            <span>2.5N+</span>
+        </div>
+    </div>
+
+<script>
+    const STL_BASE_URL = "http://localhost:8000/";
+
+    // --- 1. 场景搭建 ---
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1e1e1e);
+    scene.fog = new THREE.Fog(0x1e1e1e, 0.5, 6); // 雾效增强深度感
+
+    // 相机 Z-up 配置
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 10);
+    // 调整相机位置，让手看起来是立着的
+    camera.position.set(0.3, -0.4, 0.3); 
+    camera.up.set(0, 0, 1); // Z轴向上 !
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 0, 0.15); // 稍微看高一点
+    controls.update();
+
+    // --- 2. 灯光 ---
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    scene.add(ambientLight);
+
+    const keyLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    keyLight.position.set(1, -2, 2); // 从前方打光
+    keyLight.castShadow = true;
+    scene.add(keyLight);
+
+    const rimLight = new THREE.PointLight(0x4455ff, 0.6); // 蓝色轮廓光
+    rimLight.position.set(-1, 1, 0.5);
+    scene.add(rimLight);
+
+    // --- 3. 网格 (Floor) ---
+    // GridHelper 默认是 XZ 平面，但在 Z-up 系统里，我们需要把它旋转到 XY 平面作为地面
+    const grid = new THREE.GridHelper(2, 20, 0x555555, 0x222222);
+    grid.rotation.x = Math.PI / 2; 
+    scene.add(grid);
+    // 坐标轴
+    scene.add(new THREE.AxesHelper(0.1));
+
+    // --- 4. 机械手根节点 ---
+    const robotRoot = new THREE.Group();
+    // 【核心修正】既然相机和 URDF 都是 Z-up，这里不需要旋转了！
+    robotRoot.rotation.x = 0; 
+    robotRoot.position.z = 0; 
+    scene.add(robotRoot);
+
+    // --- 5. 材质与加载 ---
+    const loader = new THREE.STLLoader();
+    const handMaterial = new THREE.MeshPhysicalMaterial({ 
+        color: 0xd0d0d0, 
+        metalness: 0.6, 
+        roughness: 0.4,
+        clearcoat: 0.3
+    });
+
+    const joints = new Array(16).fill(null);
+    const arrowMeshes = {};
+
+    function loadMesh(filename, parent, offset, rot) {
+        loader.load(STL_BASE_URL + filename, (geo) => {
+            const mesh = new THREE.Mesh(geo, handMaterial);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            if(offset) mesh.position.set(offset.x, offset.y, offset.z);
+            if(rot) mesh.rotation.set(rot.x, rot.y, rot.z, 'ZYX');
+            parent.add(mesh);
+        });
+    }
+
+    function createJoint(parent, idx, xyz, rpy) {
+        const g = new THREE.Group();
+        g.position.set(xyz[0], xyz[1], xyz[2]);
+        g.rotation.set(rpy[0], rpy[1], rpy[2], 'ZYX');
+        parent.add(g);
+        if (idx !== null) joints[idx] = g;
+        return g;
+    }
+
+    // --- 6. 胖箭头系统 (FatArrow) ---
+    class FatArrow {
+        constructor(parent, name) {
+            this.group = new THREE.Group();
+            
+            // 更粗的箭杆
+            const shaftGeo = new THREE.CylinderGeometry(0.005, 0.005, 1, 12);
+            shaftGeo.translate(0, 0.5, 0); 
+            this.shaft = new THREE.Mesh(shaftGeo, new THREE.MeshLambertMaterial({color: 0xffffff}));
+            
+            // 更粗的箭头
+            const headGeo = new THREE.ConeGeometry(0.010, 0.025, 12);
+            headGeo.translate(0, 0.0125, 0); // 微调
+            this.head = new THREE.Mesh(headGeo, new THREE.MeshLambertMaterial({color: 0xffffff}));
+            
+            this.group.add(this.shaft);
+            this.group.add(this.head);
+            this.group.visible = false;
+            
+            // 默认指向上 (Y)，update 时会旋转
+            parent.add(this.group);
+        }
+
+        update(vector) {
+            let len = vector.length();
+            if (len < 0.05) {
+                this.group.visible = false;
+                return;
+            }
+            this.group.visible = true;
+
+            // 1. 方向对齐
+            const dir = vector.clone().normalize();
+            this.group.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
+
+            // 2. 长度缩放 (Scale) - 限制最大长度以免穿模
+            // 1N -> 0.03m (3cm)
+            const visualLen = Math.min(len * 0.03, 0.08); 
+            
+            this.shaft.scale.set(1, visualLen, 1);
+            this.head.position.y = visualLen;
+
+            // 3. 颜色热力图 (Cold -> Hot)
+            const color = new THREE.Color();
+            // 0.5N (冷) -> 2.5N (热)
+            const t = Math.min(Math.max(len - 0.2, 0) / 2.3, 1.0);
+            
+            // HSL: 0.6(Blue) -> 0.0(Red)
+            color.setHSL(0.6 * (1.0 - t), 1.0, 0.5);
+            
+            this.shaft.material.color.copy(color);
+            this.head.material.color.copy(color);
+        }
+    }
+
+    // --- 7. 组装机械手 (URDF 结构) ---
+    const FLIP = {x:0, y:0, z:-Math.PI};
+    const NO_OFF = {x:0, y:0, z:0};
+
+    // BASE
+    const baseLink = new THREE.Group();
+    robotRoot.add(baseLink);
+    loadMesh("left_base_link.STL", baseLink, NO_OFF, FLIP);
+
+    // THUMB
+    const tAbd = createJoint(baseLink, 0, [-0.0281, -0.0145, 0.0254], [-1.22, 0, 1.57]);
+    loadMesh("left_t_link.STL", tAbd, NO_OFF, FLIP);
+    const tFlex = createJoint(tAbd, 1, [0.0035, 0.0038, 0.0197], [0.13, 0.18, -0.26]);
+    loadMesh("left_thumb_mcp_link.STL", tFlex, NO_OFF, FLIP);
+    const tMcp = createJoint(tFlex, 2, [0, 0.0034, 0.0358], [0,0,0]);
+    loadMesh("left_thumb_proximal_link.STL", tMcp, NO_OFF, FLIP);
+    
+    // Thumb Mid
+    const tMidLoc = new THREE.Group(); tMidLoc.position.z = 0.02; tMcp.add(tMidLoc);
+    arrowMeshes["Thumb-Mid"] = new FatArrow(tMidLoc, "Thumb-Mid");
+
+    const tIp = createJoint(tMcp, 3, [0, 0.0022, 0.0299], [0,0,0]);
+    loadMesh("left_thumb_distal_link.STL", tIp, NO_OFF, FLIP);
+    const tTip = createJoint(tIp, null, [0, 0.0059, 0.0318], [0,0,0]);
+    loadMesh("left_thumb_tip_link.STL", tTip, NO_OFF, FLIP);
+    
+    // Thumb Tip
+    const tTipLoc = new THREE.Group(); tTipLoc.position.set(0, 0, 0.015); tTip.add(tTipLoc);
+    arrowMeshes["Thumb-Tip"] = new FatArrow(tTipLoc, "Thumb-Tip");
+
+    // FINGERS
+    function buildFinger(name, idx, xyz, rpy, prefix) {
+        const mcp = createJoint(baseLink, idx, xyz, rpy);
+        loadMesh(prefix + "_proximal_link.STL", mcp, NO_OFF, FLIP);
+        
+        // Mid Sensor: Z=0.025 (中间)
+        const midLoc = new THREE.Group(); midLoc.position.z = 0.025; mcp.add(midLoc);
+        arrowMeshes[name + "-Mid"] = new FatArrow(midLoc, name+"-Mid");
+
+        const pip = createJoint(mcp, idx+1, [0, -0.0015, 0.043], [0,0,0]);
+        loadMesh(prefix + "_middle_link.STL", pip, NO_OFF, FLIP);
+        const dip = createJoint(pip, idx+2, [0, 0, 0.022], [0,0,0]);
+        loadMesh(prefix + "_distal_link.STL", dip, NO_OFF, FLIP);
+        const tip = createJoint(dip, null, [0, 0.0035, 0.0268], [0,0,0]);
+        loadMesh(prefix + "_tip_link.STL", tip, NO_OFF, FLIP);
+
+        // 【位置修正】Tip Sensor: 沿 +Z 方向移动 1.5cm，到达指节中间 (指腹)
+        const tipLoc = new THREE.Group(); 
+        tipLoc.position.z = 0.015; // +Z 是手指延伸方向
+        tip.add(tipLoc);
+        arrowMeshes[name + "-Tip"] = new FatArrow(tipLoc, name+"-Tip");
+    }
+
+    buildFinger("Index", 4, [-0.0306, -0.0012, 0.1054], [0, -0.05, 0.035], "left_index");
+    buildFinger("Middle", 7, [-0.0075, 0, 0.106], [0, 0, 0], "left_middle");
+    buildFinger("Ring", 10, [0.0156, -0.0012, 0.1054], [0, 0.052, -0.035], "left_ring");
+    buildFinger("Pinky", 13, [0.0383, -0.0036, 0.0924], [0, 0.105, -0.07], "left_pinky");
+
+    // --- 8. 通信 ---
+    const socket = new WebSocket("ws://localhost:8765");
+    const statusDot = document.getElementById("statusDot");
+    const statusText = document.getElementById("statusText");
+
+    socket.onopen = () => { statusDot.className = "status-dot connected"; statusText.textContent = "Connected"; };
+    socket.onclose = () => { statusDot.className = "status-dot disconnected"; statusText.textContent = "Disconnected"; };
+
+    socket.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        const q = data.q;
+        const f = data.f;
+
+        // Thumb
+        if(joints[0]) joints[0].rotation.y = -q[0];
+        if(joints[1]) joints[1].rotation.x = q[1];
+        if(joints[2]) joints[2].rotation.x = q[2];
+        if(joints[3]) joints[3].rotation.x = q[3]; 
+
+        // Fingers
+        for(let i=4; i<16; i++) {
+            if(joints[i]) joints[i].rotation.x = q[i];
+        }
+
+        // Force Arrows
+        for(const [name, vec] of Object.entries(f)) {
+            if(arrowMeshes[name]) {
+                const forceVec = new THREE.Vector3(vec[0], vec[1], vec[2]);
+                arrowMeshes[name].update(forceVec);
+            }
+        }
+    };
+
+    function animate() {
+        requestAnimationFrame(animate);
+        renderer.render(scene, camera);
+    }
+    animate();
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+</script>
+</body>
+</html>
