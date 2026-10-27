@@ -58,7 +58,16 @@ third_party/
 | `firmware/main/firmware_v0.1.0/` | 拆分后的 Arduino 工程，含 `build/`（约 24 MB，已在根 `.gitignore` 中忽略） |
 | `ros2/src/sdk/` | SDK 的本地副本（带 `.gitrepo`，来自 `git-subrepo`）；示例文件与顶层 `sdk/` 不完全一致，目前未被自研模块使用 |
 
-> 建议：把 `firmware_v0.1.0/build/` 清理掉再纳入版本管理；确认 `ros2/src/sdk/` 的用途后删除或合并，避免两份 SDK 漂移。
+> 建议：确认 `ros2/src/sdk/` 的用途后删除或合并，避免两份 SDK 漂移。
+
+版本库不包含以下构建产物/二进制文件（由根 `.gitignore` 排除）：
+
+- `firmware/main/firmware_v0.1.0/build/`
+- `ros2/build/`、`ros2/install/`、`ros2/log/`
+- `*.so`（包括 `ros2/src/manus_glove_pkg/ManusSDK/lib/libManusSDK_Integrated.so`）
+- `logs/`、`*.log`
+
+首次在目标机器使用时，请按上游说明重新构建固件与 ROS 2 工作区；Manus 手套 SDK 的二进制库需从上游或厂商重新获取。
 
 ### 2.3 固件有符号力矩补丁
 

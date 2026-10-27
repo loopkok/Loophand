@@ -148,7 +148,7 @@ GUI 操作顺序：选择串口 → **START SYSTEM**（触觉开始 2 s 标定�
 
 ## 6. 上游仓库与本地改动
 
-上游 [TetherIA/aero-hand-open](https://github.com/TetherIA/aero-hand-open) 固定在提交 `e2060cf`（2025-11-07），完整保留在 `third_party/aero-hand-open`。上游 `.git` 已移除，该目录作为普通代码快照随主项目管理。
+上游 [TetherIA/aero-hand-open](https://github.com/TetherIA/aero-hand-open) 固定在提交 `e2060cf`（2025-11-07），源码保留在 `third_party/aero-hand-open`。上游 `.git` 已移除，该目录作为普通代码快照随主项目管理；构建产物、`*.so` 和日志不入库。
 
 本地对该仓库的改动包括：
 
