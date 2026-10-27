@@ -1,0 +1,10 @@
+Aero Hand Open
+Copyright 2025 TetherIA, Inc.
+
+This product includes software developed at TetherIA, Inc.
+(https://tetheria.ai)
+
+Licensed under the Apache License, Version 2.0.
+
+
+ ros2 run aero_hand_open aero_hand_node   --ros-args   -p left_port:=/dev/ttyACM0   -p baudrate:=921600   -p feedback_frequency:=60.0   -p control_space:=joint

@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
+;
+[subrepo]
+	remote = https://github.com/TetherIA/aero-open-ros2.git
+	branch = public_release
+	commit = d4283ae7507f02852675c5fb413bbb68a13cf4f4
+	parent = 400cd162c224bf968e088b51757667c967fc4b0a
+	method = merge
+	cmdver = 0.4.9

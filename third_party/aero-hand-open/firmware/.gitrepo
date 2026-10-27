@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
+;
+[subrepo]
+	remote = https://github.com/TetherIA/aero-open-firmware.git
+	branch = main
+	commit = 39f0fff19192726631561df87831d95e83004ef8
+	parent = 6378d32acbc7b595d4000084422938760e97a506
+	method = merge
+	cmdver = 0.4.9
