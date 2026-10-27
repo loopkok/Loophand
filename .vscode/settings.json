@@ -1,0 +1,6 @@
+{
+    "cmake.sourceDirectory": "/home/loopkok/Documents/loophand/third_party/aero-hand-open/ros2/src/aero_hand_open_msgs",
+    "python.analysis.extraPaths": [
+        "/home/loopkok/Documents/loophand/src"
+    ]
+}

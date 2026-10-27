@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+
+# Runtime artifacts
+logs/
+*.log
+src/loophand/assets/generated/
+
+# Vendored upstream build products
+third_party/aero-hand-open/firmware/main/firmware_v0.1.0/build/
+third_party/aero-hand-open/ros2/build/
+third_party/aero-hand-open/ros2/install/
+third_party/aero-hand-open/ros2/log/
+
+# Editor / OS
+.DS_Store

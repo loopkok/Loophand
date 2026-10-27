@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "loophand"
+version = "0.1.0"
+description = "Tactile shear-force grasp control for the Aero Hand Open"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "pyserial>=3.5",
+]
+
+# Pinocchio is intentionally not listed: it comes from ROS 2 Humble or conda.
+[project.optional-dependencies]
+gui = [
+    "pyqtgraph>=0.13",
+    "PyQt5>=5.15",
+    "trimesh>=4.0",
+    "scipy>=1.10",
+]
+[project.scripts]
+loophand-gui = "loophand.app.main_gui:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["loophand*"]
+
+[tool.setuptools.package-data]
+loophand = ["assets/*.urdf", "assets/meshes/*.STL"]

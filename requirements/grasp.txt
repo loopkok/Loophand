@@ -1,0 +1,9 @@
+numpy>=1.24
+pyserial>=3.5
+pyqtgraph>=0.13
+PyQt5>=5.15
+trimesh>=4.0
+scipy>=1.10
+
+# pinocchio is provided by ROS 2 Humble (source /opt/ros/humble/setup.bash)
+# or by conda; it is not installed from this file.
